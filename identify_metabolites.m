@@ -5,14 +5,16 @@ training_dataset = questdlg('What dataset would you like to use?','Dataset Quest
 
 target_dataset = load_collection;
 
-spectra = load_spectra(training_dataset);
+location = ['datasets/',training_dataset];
+
+spectra = load_spectra(location);
 
 % Now calculate the probabilities
-dir_models = dir([training_dataset,'/models']);
+dir_models = dir([location,'/models']);
 dir_models = dir_models(3:end);
 probabilities = {};
 for i = 1:length(dir_models)    
-    model = json2mat([training_dataset,'/models/',dir_models(i).name],'tag');    
+    model = json2mat([location,'/models/',dir_models(i).name],'tag');    
     probabilities{i} = {};
     probabilities{i}.mname = model.mname;
     probabilities{i}.bin_boundaries = model.bin_boundaries;
@@ -39,4 +41,4 @@ for i = 1:length(probabilities)
 end
 fclose(fid);
 
-save('probabilities');
+save(['probabilities_',training_dataset],'probabilities');

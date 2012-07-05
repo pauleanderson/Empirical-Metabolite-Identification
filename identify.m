@@ -124,7 +124,13 @@ function load_probabilities_pushbutton_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-load('probabilities');
+[filename, pathname] = uigetfile('*.mat', 'Pick a probabilities file');
+if isequal(filename,0) || isequal(pathname,0)
+   disp('User pressed cancel');
+   return;
+end
+
+load([pathname,filename],'probabilities');
 handles.probabilities = probabilities;
 
 column_names = {'Name','Max','Min','Avg','Median','Dataset','Index'};
@@ -241,11 +247,10 @@ data = get(handles.spectra_uitable,'data');
 i = eventdata.Indices(1,1);
 sindex = data{i,end};
 mindex = handles.mindex;
-mdata = get(handles.metabolites_uitable,'data');
-mname = mdata{mindex,1};
-dataset = mdata{mindex,end-1};
-model = json2mat([dataset,'/models/',mname],'tag');
-bin_boundaries = model.bin_boundaries;
+mname = handles.probabilities{mindex}.mname;
+dataset = handles.probabilities{mindex}.dataset;
+metabolite = json2mat(['datasets/metabolites/',mname],'tag');
+bin_boundaries = metabolite.bin_boundaries;
 
 c = handles.collection;
 plot(c.x,c.Y(:,sindex));
@@ -255,17 +260,24 @@ for b = 1:size(bin_boundaries,1)
     inxs = find(bin_boundaries(b,1) >= c.x & c.x >= bin_boundaries(b,2));
     bin_inxs = [bin_inxs,inxs];
     line([bin_boundaries(b,1),bin_boundaries(b,1)],ylim,'color','g');
-    line([bin_boundaries(b,2),bin_boundaries(b,2)],ylim,'color','r');
+    line([bin_boundaries(b,2),bin_boundaries(b,2)],ylim,'color','r');    
 end
 bin_inxs = unique(bin_inxs);
+% Now graph the metabolite peaks
+sm_to_match = max(c.Y(bin_inxs,sindex));
+for c = 1:length(metabolite.centers)
+    for j = 1:length(metabolite.locations{c})
+        loc = metabolite.locations{c}(j);
+        int = metabolite.intensities{c}(j);
+        line([loc,loc],[0,int],'linewidth',3,'color','m');
+    end
+end
 
-sm_to_match = sum(c.Y(bin_inxs,sindex));
 
 [vs,ixs] = sort(handles.probabilities{mindex}.corr_vector(sindex,:),'descend');
 hold on
-dataset = mdata{mindex,end-1};
 for i = ixs(1:3)
-    spectrum = json2mat([dataset,'/spectra/',num2str(i)],'tag');
+    spectrum = json2mat(['datasets/',dataset,'/spectra/',num2str(i)],'tag');
     bin_inxs = [];
     for b = 1:size(bin_boundaries,1)
         inxs = find(bin_boundaries(b,1) >= spectrum.x & spectrum.x >= bin_boundaries(b,2));
