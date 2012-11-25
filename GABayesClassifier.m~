@@ -1,0 +1,98 @@
+classdef GABayesClassifier < handle
+    properties
+        met % Metabolite object
+        mask % Mask representing which of the n spectra to include
+        % These are set after training
+        labels
+        Y
+        x
+        model
+        fitness
+    end       
+    
+    methods
+        function obj = GABayesClassifier(met)
+            obj.met = met;
+        end
+        
+        % Pre: mask must be set
+        function fitness = train(obj,x,Y,labels,cvmethod,cvparam)
+            xinxs = [];
+            for r = 1:size(obj.met.ranges,1)
+                xinxs = [xinxs;find(obj.met.ranges(r,1) >= x & x >= obj.met.ranges(r,2))];
+            end
+            xinxs = sort(unique(xinxs'));
+
+            CVO = cvpartition(labels,cvmethod,cvparam);            
+            classifier = @(xtrain,ytrain,xtest) (cv_classifier(obj,xtrain,ytrain,xtest,xinxs));
+            % Need to adjust the partitions before calling the function to deal with the mask
+              err = zeros(CVO.NumTestSets,1);
+              for i = 1:CVO.NumTestSets
+                  trIdx = CVO.training(i);
+                  trIdx = find(trIdx == 1 & obj.mask' == 1); % In both
+                  teIdx = CVO.test(i); % Don't mask the training set
+                  ytest = classifier(Y(trIdx,:),labels(trIdx),Y(teIdx,:));
+                  err(i) = sum(~strcmp(ytest,labels(teIdx)));
+              end
+            
+            num_masked = length(find(obj.mask <= 0));
+            num_features = length(obj.mask);
+            fitness = 0.8*mean(err) + 0.2*(1 - num_masked/num_features);            
+
+            % Save state
+            obj.Y = Y;
+            obj.x = x;
+            obj.labels = labels;
+            obj.model = create_model(obj,Y,labels);
+            obj.fitness = fitness;
+        end
+        
+        function [ytest,model] = cv_classifier(obj,xtrain,ytrain,xtest,xinxs)
+            % Remove them from the training, but keep them in the test set
+            xtrain = xtrain(:,xinxs);
+            C = GABayesClassifier.convert_to_correlation(xtrain,xtrain);
+            model = create_model(obj,C,ytrain);
+            Ctest = GABayesClassifier.convert_to_correlation(xtrain,xtest(:,xinxs));
+            ytest = model.predict(Ctest');
+        end
+        
+        function model = create_model(obj,xtrain,ytrain)
+            model = NaiveBayes.fit(xtrain,ytrain);
+        end
+              
+        function predictions = predict(obj,Y)
+            C = convert_to_correlation(obj.Y,Y);
+            predictions = obj.model.predict(C);
+        end                
+    end
+    
+    methods (Static = true)
+        function C = convert_to_correlation(Y1,Y2)
+            % Vectorized version that runs a lot faster
+            nY1 = size(Y1,1);
+            nY2 = size(Y2,1);
+            C = zeros(nY1,nY2);
+            inxs1 = zeros(1,nY2);
+            inxs2 = zeros(1,nY2);
+            for i = 1:nY1
+                inxs1(1:nY2) = i;
+                inxs2(1:nY2) = 1:nY2;
+                vectY1 = Y1(inxs1,:);
+                vectY2 = Y2(inxs2,:);
+                means1 = repmat(mean(vectY1,2),1,size(vectY1,2));
+                means2 = repmat(mean(vectY2,2),1,size(vectY2,2));
+                sub1 = vectY1 - means1;
+                sub2 = vectY2 - means2;
+                C(i,:) = sum(sub1.*sub2,2)./sqrt(sum(sub1.^2,2).*sum(sub2.^2,2));
+            end
+
+%             for i = 1:size(Y1,1)
+%                 c = 1;
+%                 for j = 1:size(Y2,1)
+%                     C(c,i) = corr(Y1(i,:)',Y2(j,:)');
+%                     c = c + 1;
+%                 end
+%             end
+        end
+    end
+end
